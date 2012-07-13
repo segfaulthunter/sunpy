@@ -43,7 +43,8 @@ def install(setup): #pylint: disable=W0621
             'scipy',
             'suds',
             'pandas',
-            'matplotlib>=1.0'
+            'matplotlib>=1.0',
+            'h5Py',
         ],
         license="BSD",
         long_description="\n".join(DOCLINES[2:]),
