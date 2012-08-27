@@ -3,21 +3,63 @@
 
 from __future__ import absolute_import
 
+from gevent import monkey
+monkey.patch_all()
+
 import urllib2
+
+from collections import deque
 
 import gevent
 
 from gevent.pool import Pool
-from gevent import monkey
-
 import sunpy
+
+from sunpy.net.download import default_name
 from sunpy.util.util import buffered_write
 
-monkey.patch_all()
+
+class QueuePool(object):
+    def __init__(self, size):
+        self.waiting = deque()
+        self.size = size
+        self.running = set()
+
+    def _spawn(self, function, *args, **kwargs):
+        spawned = gevent.spawn(function, *args, **kwargs)
+        spawned.link(self.refill)
+        self.running.add(spawned)
+
+    def spawn_queue(self, function, *args, **kwargs):
+        if self.full():
+            self.waiting.append((function, args, kwargs))
+        else:
+            self._spawn(function, *args, **kwargs)
+
+    def refill(self, greenlet):
+        self.running.remove(greenlet)
+        while self.waiting and not self.full():
+            function, args, kwargs = self.waiting.pop()
+            self._spawn(function, *args, **kwargs)
+
+    def full(self):
+        return len(self.running) == self.size
+
+    def joinall(self):
+        while True:
+            gevent.joinall(self.running)
+            if not self.waiting:
+                return
+
+    def killall(self):
+        self.waiting = deque()
+        for greenlet in self.running:
+            greenlet.kill()
+
 
 class Downloader(object):
     def __init__(self, max_total=20):
-        self.pool = Pool(max_total)
+        self.pool = QueuePool(max_total)
         self.buf = 9096
     
     def _download(self, url, path, callback, errback):
@@ -75,13 +117,44 @@ class Downloader(object):
             errback = self._default_error_callback
         
         # Attempt to download file from URL
-        self.pool.spawn(self._download, url, path, callback, errback)
+        self.pool.spawn_queue(self._download, url, path, callback, errback)
 
     def start(self):
         pass
     
     def stop(self):
-        pass
+        self.pool.killall()
 
     def run_sync(self, fun):
         fun()
+
+
+if __name__ == '__main__':
+    import tempfile
+    from functools import partial
+
+    def wait_for(n, callback): #pylint: disable=W0613
+        items = []
+        def _fun(handler):
+            items.append(handler)
+            if len(items) == 4:
+                callback(items)
+        return _fun
+    
+    
+    tmp = tempfile.mkdtemp()
+    print tmp
+    path_fun = partial(default_name, tmp)
+    
+    dw = Downloader(2)
+    
+    on_finish = wait_for(4, lambda _: dw.stop())
+    dw.download('http://google.at', path_fun, on_finish)
+    dw.download('http://google.de', path_fun, on_finish)
+    dw.download('https://bitsrc.org', path_fun, on_finish)
+    dw.download('ftp://speedtest.inode.at/speedtest-100mb', path_fun, on_finish)
+    
+    # print dw.conns
+    print dw.pool.running
+    dw.pool.joinall()
+    dw.start()
