@@ -24,7 +24,11 @@ from collections import defaultdict
 
 from suds import client, TypeNotFound
 
-from sunpy.net import download
+try:
+    from sunpy.net import download_gevent as download
+except ImportError:
+    from sunpy.net import download
+
 from sunpy.net.attr import and_, Attr
 from sunpy.net.vso.attrs import walker, TIMEFORMAT
 from sunpy.util.util import to_angstrom, print_table
@@ -189,7 +193,7 @@ class QueryResponse(list):
         print(print_table(table, colsep = '  ', linesep='\n'))
             
     def add_error(self, exception):
-        self.errors.append(exception)
+        self.errors.append(exception)	  
 
 class DownloadFailed(Exception):
     pass
@@ -321,7 +325,7 @@ class VSOClient(object):
         )
         if not name:
             name = response.fileid.replace('/', '_')
-        
+        print name, pattern
         fname = pattern.format(file=name, **dict(response))
         dir_ = os.path.dirname(fname)
         if not os.path.exists(dir_):
@@ -493,9 +497,10 @@ class VSOClient(object):
         """
         if downloader is None:
             downloader = download.Downloader()
-            threading.Thread(target=downloader.reactor.run).start()
+            downloader.start()
             res = Results(
-                lambda _: downloader.reactor.stop(), 1,
+                # The callback gets and argument, stop accepts none.
+                lambda _: downloader.stop(), 1,
                 lambda mp: self.link(query_response, mp)
             )
         else:
@@ -595,9 +600,9 @@ class VSOClient(object):
                     except NoData:
                         res.add_error(DownloadFailed(dresponse))
                         continue
-                    except Exception:
+                    except Exception, e:
                         # FIXME: Is this a good idea?
-                        res.add_error(DownloadFailed(dresponse))
+                        res.add_error(e)
             elif code == '300' or code == '412' or code == '405':
                 if code == '300':
                     try:
@@ -640,7 +645,7 @@ class VSOClient(object):
     def download(self, method, url, dw, callback, errback, *args):
         """ Override to costumize download action. """
         if method.startswith('URL'):
-            return dw.reactor.call_sync(
+            return dw.run_sync(
                 partial(dw.download, url, partial(self.mk_filename, *args),
                         callback, errback)
             )

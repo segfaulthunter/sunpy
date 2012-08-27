@@ -423,6 +423,15 @@ class Downloader(object):
                             return
                     else:
                         break
+    
+    def start(self):
+        threading.Thread(target=self.reactor.run).start()
+    
+    def stop(self):
+        self.reactor.stop()
+
+    def run_sync(fun):
+        self.reactor.call_sync(fun)
 
 
 if __name__ == '__main__':
