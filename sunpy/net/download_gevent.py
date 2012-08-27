@@ -63,8 +63,6 @@ class Downloader(object):
         # Create function to compute the filepath to download to if not set
         default_dir = sunpy.config.get("downloads", "download_dir")
         
-        print path
-
         if path is None:
             path = partial(default_name, default_dir)
         elif isinstance(path, basestring):
