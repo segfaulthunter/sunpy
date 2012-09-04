@@ -22,3 +22,5 @@ SunPy Code Reference
    time
    vso
    wcs
+   spectrogram
+   callisto

@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 # Author: Florian Mayer <florian.mayer@bitsrc.org>
-
+#
+# This module was developed with funding provided by
+# the ESA Summer of Code (2011).
+#
 #pylint: disable=W0401,C0103,R0904,W0141
 
 from __future__ import absolute_import
@@ -12,19 +15,22 @@ This module provides a wrapper around the VSO API.
 import re
 import os
 import sys
+import random
 import tempfile
 import threading
+
 
 from datetime import datetime, timedelta
 from functools import partial
 from collections import defaultdict
-
+from string import ascii_lowercase
 from suds import client, TypeNotFound
 
 from sunpy.net import download
+from sunpy.net.util import get_filename, slugify
 from sunpy.net.attr import and_, Attr
 from sunpy.net.vso.attrs import walker, TIMEFORMAT
-from sunpy.util.util import to_angstrom, print_table
+from sunpy.util.util import to_angstrom, print_table, replacement_filename
 from sunpy.time import parse_time
 
 DEFAULT_URL = 'http://docs.virtualsolar.org/WSDL/VSOi_rpc_literal.wsdl'
@@ -60,12 +66,24 @@ class Results(object):
         self.errors = []
     
     def submit(self, keys, value):
+        """
+        
+        Parameters
+        ----------
+        keys : list
+            names under which to save the value
+        value : object
+            value to save
+        """
         for key in keys:
             self.map_[key] = value
         self.poke()
     
     def poke(self):
         self.n -= 1
+        """ Signal completion of one item that was waited for. This can be
+        because it was submitted, because it lead to an error or for any
+        other reason. """
         if not self.n:
             if self.done is not None:
                 self.map_ = self.done(self.map_)
@@ -73,15 +91,28 @@ class Results(object):
             self.evt.set()
     
     def require(self, keys):
+        """ Require that keys be submitted before the Results object is
+        finished (i.e., wait returns). Returns a callback method that can
+        be used to submit the result by simply calling it with the result.
+        
+        keys : list
+            name of keys under which to save the result
+        """
         self.n += 1
         return partial(self.submit, keys)
     
-    def wait(self):
+    def wait(self, timeout=100):
         """ Wait for result to be complete and return it. """
-        self.evt.wait()
+        # Giving wait a timeout somehow circumvents a CPython bug that the
+        # call gets ininterruptible.
+        while not self.evt.wait(timeout):
+            pass
+
         return self.map_
     
     def add_error(self, exception):
+        """ Signal a required result cannot be submitted because of an
+        error. """
         self.errors.append(exception)
         self.poke()
 
@@ -120,6 +151,14 @@ class QueryResponse(list):
         self.queryresult = queryresult
         self.errors = []
     
+    def query(self, *query):
+        """ Furtherly reduce the query response by matching it against
+        another query, e.g. response.query(attrs.Instrument('aia')). """
+        query = and_(*query)
+        return QueryResponse(
+            attrs.filter_results(query, self), self.queryresult
+        )
+    
     @classmethod
     def create(cls, queryresult):
         return cls(iter_records(queryresult), queryresult)
@@ -144,7 +183,7 @@ class QueryResponse(list):
         )
 
     def show(self):
-        """Print out human-readable summary of records retreived"""
+        """Print out human-readable summary of records retrieved"""
 
         table = [[str(datetime.strptime(record.time.start, TIMEFORMAT)), 
           str(datetime.strptime(record.time.end, TIMEFORMAT)), 
@@ -182,17 +221,16 @@ class VSOClient(object):
     method_order = [
         'URL-TAR_GZ', 'URL-ZIP', 'URL-TAR', 'URL-FILE', 'URL-packaged'
     ]
-    def __init__(self, api=None):
+    def __init__(self, url=None, port=None, api=None):
         if api is None:
-            api = client.Client(DEFAULT_URL)
-            api.set_options(port=DEFAULT_PORT)
+            if url is None:
+                url = DEFAULT_URL
+            if port is None:
+                port = DEFAULT_PORT
+            
+            api = client.Client(url)
+            api.set_options(port=port)
         self.api = api
-    
-    @classmethod
-    def from_url(self, url, port):
-        api = client.Client(url)
-        api.set_options(port=port)
-        return cls(api)
     
     def make(self, type_, **kwargs):
         obj = self.api.factory.create(type_)
@@ -283,15 +321,27 @@ class VSOClient(object):
         return self.make('QueryResponse', provideritem=providers.values())
     
     @staticmethod
-    def mk_filename(pattern, response, sock, url):
-        # FIXME: os.path.exists(name)
-        name = sock.headers.get(
-            'Content-Disposition', url.rstrip('/').rsplit('/', 1)[-1]
-        )
+    def mk_filename(pattern, response, sock, url, overwrite=False):
+        name = get_filename(sock, url)
         if not name:
-            name = response.fileid.replace('/', '_')
-        
+            if not isinstance(response.fileid, unicode):
+                name = unicode(response.fileid, "ascii", "ignore")
+            else:
+                name = response.fileid
+
+        fs_encoding = sys.getfilesystemencoding()
+        if fs_encoding is None:
+            fs_encoding = "ascii"
+        name = name.encode(fs_encoding, "ignore")
+
+        if not name:
+            name = "file"
+
         fname = pattern.format(file=name, **dict(response))
+
+        if not overwrite and os.path.exists(fname):
+            fname = replacement_filename(fname)
+        
         dir_ = os.path.dirname(fname)
         if not os.path.exists(dir_):
             os.makedirs(dir_)
