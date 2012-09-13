@@ -6,6 +6,7 @@ from __future__ import absolute_import
 from gevent import monkey
 monkey.patch_all()
 
+import shutil
 import urllib2
 
 from collections import deque
@@ -16,8 +17,6 @@ from gevent.pool import Pool
 import sunpy
 
 from sunpy.net.download import default_name
-from sunpy.util.util import buffered_write
-
 
 class QueuePool(object):
     def __init__(self, size):
@@ -60,8 +59,7 @@ class QueuePool(object):
 class Downloader(object):
     def __init__(self, max_total=20):
         self.pool = QueuePool(max_total)
-        self.buf = 9096
-    
+
     def _download(self, url, path, callback, errback):
         sock = urllib2.urlopen(url)
         fullname = path(sock, url)
@@ -71,7 +69,7 @@ class Downloader(object):
         except IOError, e:
             if errback is not None:
                 return errback(e)
-        buffered_write(sock, fd, self.buf)
+        shutil.copyfileobj(sock, fd)
         callback({'path': fullname})    
 
     def _default_callback(self, *args):
