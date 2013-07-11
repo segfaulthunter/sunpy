@@ -101,7 +101,7 @@ Python session.  This means that the remainder of your Python script
 will continue as the download proceeds.  This may cause a problem if
 the remainder of your script relies on the presence of the downloaded
 data.  If you want to resume your script after all the data has been
-downloaded, use the :py:meth:`wait() <sunpy.net.vso.vso.Results>` method of the getter.
+downloaded, use the :py:meth:`wait() <sunpy.net.vso.vso.Results.wait>` method of the getter.
 
      >>> res = getter.wait()
 
