@@ -84,7 +84,7 @@ which yields four results, the same as the VSO IDL client.
 Having located the data you want, you can download it using the
 following command:
 
-    >>> res=client.get(qr, path='/Users/ireland/Desktop/Data/{file}.fits')
+    >>> getter = client.get(qr, path='/Users/ireland/Desktop/Data/{file}.fits')
 
 This downloads the query results into the directory
 /Users/ireland/Dekstop/Data naming each downloaded file with the
@@ -94,16 +94,19 @@ for each file.  You can also use other properties of the query return
 to define the path where the data is saved.  For example, to save the
 data to a subdirectory named after the instrument, use
 
-    >>> res=client.get(qr, path='/Users/ireland/Desktop/Data/{instrument}/{file}.fits')
+    >>> getter = client.get(qr, path='/Users/ireland/Desktop/Data/{instrument}/{file}.fits')
 
 Note that the download process is spawned in parallel to your existing
 Python session.  This means that the remainder of your Python script
 will continue as the download proceeds.  This may cause a problem if
 the remainder of your script relies on the presence of the downloaded
 data.  If you want to resume your script after all the data has been
-downloaded then append '.wait()' to the 'get' command above, i.e.,
+downloaded, use the :py:meth:`wait() <sunpy.net.vso.vso.Results>` method of the getter.
 
-     >>> res=client.get(qr, path='/Users/ireland/Desktop/Data/{instrument}/{file}.fits').wait()
+     >>> res = getter.wait()
+
+In case there is a problem with your query, the respective exceptions can be
+founding :py:attr:`getter.errors`. res will now contain a list of downloaded files.
 
 More information on the options available can be found through the
 standard Python 'help' command.
