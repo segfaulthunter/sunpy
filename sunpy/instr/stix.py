@@ -144,7 +144,10 @@ def vis_clean(visin, iterations, npx, pixel, weights=weights, clean_box=None,
 
     # Scale cmap to same scale as clean_map by using the center value of the
     # Gaussian filter kernel.
-    clean_image=clean_map + cmap * kernel.max() / pixel ** 2
+    resid_map = cmap * kernel.max() / pixel ** 2
+    clean_image=clean_map + scipy.ndimage.filters.gaussian_filter(
+       resid_map, std_dev, mode="constant", cval=0
+    )
     return clean_image
 
 
@@ -205,7 +208,7 @@ if __name__ == "__main__":
             pyfits.open(r"C:\users\florian\vis.fits"),
             pyfits.open(r"C:\users\florian\vis7.fits"),
             pyfits.open(r"C:\users\florian\map2.fits"),
-            pyfits.open(r"C:\users\florian\cleanim2.fits"),
+            pyfits.open(r"C:\users\florian\cleanim4.fits"),
             pyfits.open(r"C:\users\florian\psf007.fits"),
             pyfits.open(r"C:\users\florian\gauss.fits"),
             pyfits.open(r"C:\users\florian\gaussm.fits"),
